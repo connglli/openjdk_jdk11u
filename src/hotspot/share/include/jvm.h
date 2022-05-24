@@ -741,6 +741,12 @@ JVM_DTraceDispose(JNIEnv* env, jlong activation_handle);
 JNIEXPORT jboolean JNICALL
 JVM_DTraceIsSupported(JNIEnv* env);
 
+/*
+ * sun.hotspot.artemis.Artemis
+ */
+JNIEXPORT void JNICALL
+JVM_RegisterArtemisMethods(JNIEnv* env, jclass artemis);
+
 /*************************************************************************
  PART 2: Support for the Verifier and Class File Format Checker
  ************************************************************************/

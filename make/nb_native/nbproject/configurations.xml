@@ -2462,6 +2462,8 @@
                 <in>parserTests.cpp</in>
                 <in>parserTests.hpp</in>
               </df>
+              <in>artemis.cpp</in>
+              <in>artemis.hpp</in>
               <in>evmCompat.cpp</in>
               <in>forte.cpp</in>
               <in>forte.hpp</in>
@@ -3088,6 +3090,7 @@
               <df name="libjava">
                 <in>AccessController.c</in>
                 <in>Array.c</in>
+                <in>Artemis.c</in>
                 <in>AtomicLong.c</in>
                 <in>BootLoader.c</in>
                 <in>Class.c</in>
@@ -13307,6 +13310,16 @@
       <item path="../../src/hotspot/share/precompiled/precompiled.hpp"
             ex="false"
             tool="3"
+            flavor2="0">
+      </item>
+      <item path="../../src/hotspot/share/prims/artemis.cpp"
+            ex="false"
+            tool="1"
+            flavor2="0">
+      </item>
+      <item path="../../src/hotspot/share/prims/artemis.hpp"
+            ex="false"
+            tool="1"
             flavor2="0">
       </item>
       <item path="../../src/hotspot/share/prims/evmCompat.cpp"
@@ -27086,6 +27099,16 @@
             tool="3"
             flavor2="0">
       </item>
+      <item path="../../src/hotspot/share/prims/artemis.cpp"
+            ex="false"
+            tool="1"
+            flavor2="0">
+      </item>
+      <item path="../../src/hotspot/share/prims/artemis.hpp"
+            ex="false"
+            tool="1"
+            flavor2="0">
+      </item>
       <item path="../../src/hotspot/share/prims/evmCompat.cpp"
             ex="false"
             tool="1"
@@ -29732,6 +29755,11 @@
             flavor2="0">
       </item>
       <item path="../../src/java.base/share/native/libjava/Array.c"
+            ex="false"
+            tool="0"
+            flavor2="0">
+      </item>
+      <item path="../../src/java.base/share/native/libjava/Artemis.c"
             ex="false"
             tool="0"
             flavor2="0">

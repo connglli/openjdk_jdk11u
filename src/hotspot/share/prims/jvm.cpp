@@ -51,6 +51,7 @@
 #include "oops/objArrayKlass.hpp"
 #include "oops/objArrayOop.inline.hpp"
 #include "oops/oop.inline.hpp"
+#include "prims/artemis.hpp"
 #include "prims/jvm_misc.hpp"
 #include "prims/jvmtiExport.hpp"
 #include "prims/jvmtiThreadState.hpp"
@@ -3790,4 +3791,17 @@ JVM_END
 
 JVM_ENTRY_NO_ENV(jint, JVM_FindSignal(const char *name))
   return os::get_signal_number(name);
+JVM_END
+
+// sun.hotspot.artemis.Artemis ////////////////////////////////////////////////////////
+
+JVM_ENTRY(void, JVM_RegisterArtemisMethods(JNIEnv* env, jclass artemis))
+{
+  InstanceKlass* ik = InstanceKlass::cast(JNIHandles::resolve(artemis)->klass());
+  Handle loader(THREAD, ik->class_loader());
+  if (loader.is_null()) {
+    Artemis::register_methods(env, artemis, thread);
+    Artemis::set_used();
+  }
+}
 JVM_END
