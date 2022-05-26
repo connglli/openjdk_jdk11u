@@ -1091,6 +1091,11 @@ define_pd_global(uint64_t,MaxRAM,                    1ULL*G);
           "must occupy for the class to generate a trace event")            \
           range(0.0, 100.0)                                                 \
                                                                             \
+  /* HotSpot Artemis */                                                     \
+                                                                            \
+  develop(bool, PrintArtemis, false,                                        \
+          "Print artemis' compilation/deoptimization log")                  \
+                                                                            \
   /* JVMTI heap profiling */                                                \
                                                                             \
   diagnostic(bool, TraceJVMTIObjectTagging, false,                          \

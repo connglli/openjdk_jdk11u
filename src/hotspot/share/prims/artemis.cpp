@@ -1,4 +1,3 @@
-#include <iostream>
 #include "prims/artemis.hpp"
 #include "prims/whitebox.hpp"
 #include "prims/whitebox.inline.hpp"
@@ -12,6 +11,7 @@
 #include "runtime/vmOperations.hpp"
 #include "runtime/vmThread.hpp"
 #include "utilities/exceptions.hpp"
+#include "utilities/ostream.hpp"
 
 // Helper macros, methods /////////////////////////////////////////////////////
 
@@ -53,15 +53,12 @@ bool is_being_managed_on_stack(JavaThread* thread, Method* goal) {
 
 bool is_being_interpreted_at(JavaThread* thread, int depth) {
   javaVFrame* vf = get_javaVframe_at(thread, depth);
-  Method* method = vf->method();
-  std::cout << "method=" << method->external_name()
-            << ", depth=" << depth
-            << ", interpreting=" << vf->is_interpreted_frame()
-            << std::endl;
   return vf->is_interpreted_frame();
 }
 
-jmethodID reflected_method_to_jmethod_id(JavaThread* thread, JNIEnv* env, jobject method) {
+jmethodID reflected_method_to_jmethod_id(JavaThread* thread,
+                                         JNIEnv* env,
+                                         jobject method) {
   assert(method != NULL, "method should not be null");
   ThreadToNativeFromVM ttn(thread);
   return env->FromReflectedMethod(method);
@@ -71,19 +68,23 @@ bool is_method_compiled(JavaThread* thread, jmethodID jmid) {
   // The following is coped from whitebox.cpp
   MutexLockerEx mu(Compile_lock);
   methodHandle mh(thread, Method::checked_resolve_jmethod_id(jmid));
-  // InstanceKlass maintains a OSR list each is a nmethod with its BCI and CompLevel.
-  // Use InvocationEntryBci to check all nmethods of a signle method.
-  // - if match_levle=true, only return nmethod with the specifc CompLevel
+  // InstanceKlass maintains a OSR list, each is a nmethod with its BCI
+  // and CompLevel.
+  // Use InvocationEntryBci to check all nmethods of a single method.
+  // - if match_level=true, only return nmethod with the specific CompLevel
   // - otherwise, return the nmethod that have the highest and upper than
   //   the given CompLevel (in here, its CompLevel_none).
   // See InstanceKlass::lookup_osr_nmethod().
-  CompiledMethod* code = mh->lookup_osr_nmethod_for(InvocationEntryBci,
-      CompLevel_none, /*match_level=*/ false);
+  CompiledMethod *code = mh->lookup_osr_nmethod_for(InvocationEntryBci,
+                                                    CompLevel_none,
+                                                    /*match_level=*/ false);
   // No OSR nmethod, just find an non-OSR method
   if (code == NULL) {
     code = mh->code();
   }
-  return code != NULL && code->is_alive() && !code->is_marked_for_deoptimization();
+  return code != NULL &&
+         code->is_alive() &&
+         !code->is_marked_for_deoptimization();
 }
 
 // Native Artemis fields/methods //////////////////////////////////////////////
@@ -91,19 +92,43 @@ bool is_method_compiled(JavaThread* thread, jmethodID jmid) {
 bool Artemis::_used = false;
 
 AX_ENTRY(jboolean, AX_IsBeingInterpreted(JNIEnv* env, jclass artemis))
-  return is_being_interpreted_at(thread, /*depth=*/ 1);
+  int depth = 1;
+  if (PrintArtemis) {
+    Method* method = get_javaVframe_at(thread, depth)->method();
+    tty->print_cr(">>"
+                  "IsBeingInterpreted()"
+                  ": method=\"%s\""
+                  "<<",
+                  method->external_name());
+  }
+  return is_being_interpreted_at(thread, depth);
 AX_END
 
 AX_ENTRY(jboolean, AX_IsMethodJitCompiled(JNIEnv* env,
                                           jclass artemis,
                                           jobject rmethod))
   jmethodID jmid = reflected_method_to_jmethod_id(thread, env, rmethod);
+  if (PrintArtemis) {
+    Method* method = Method::checked_resolve_jmethod_id(jmid);
+    tty->print_cr(">>"
+                  "IsMethodJitCompiled()"
+                  ": method=\"%s\""
+                  "<<",
+                  method->external_name());
+  }
   return is_method_compiled(thread, jmid);
 AX_END
 
 AX_ENTRY(jboolean, AX_IsJitCompiled(JNIEnv* env, jclass artemis))
-  jmethodID jmid = get_javaVframe_at(thread, /*depth=*/ 1)->method()->jmethod_id();
-  return is_method_compiled(thread, jmid);
+  Method* method = get_javaVframe_at(thread, /*depth=*/ 1)->method();
+  if (PrintArtemis) {
+    tty->print_cr(">>"
+                  "IsJitCompiled()"
+                  ": method=\"%s\""
+                  "<<",
+                  method->external_name());
+  }
+  return is_method_compiled(thread, method->jmethod_id());
 AX_END
 
 AX_ENTRY(jboolean, AX_EnsureMethodJitCompiled(JNIEnv* env,
@@ -123,10 +148,15 @@ AX_ENTRY(jboolean, AX_EnsureMethodJitCompiled(JNIEnv* env,
     return false;
   }
 
-  std::cout << "EnsureMethodJitCompiled()"
-            << ": method=" << method->external_name()
-            << ", bci=InvocationEntryBci"
-            << std::endl;
+  if (PrintArtemis) {
+    tty->print_cr(">>"
+                  "EnsureMethodJitCompiled()"
+                  ": method=\"%s\""
+                  ", bci=InvocationEntryBci"
+                  ", osr=false"
+                  "<<",
+                  method->external_name());
+  }
 
   return WhiteBox::compile_method(method, CompLevel_full_optimization,
                                   InvocationEntryBci, thread);
@@ -135,10 +165,16 @@ AX_END
 AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env, jclass artemis))
   javaVFrame* vf = get_javaVframe_at(thread, /*depth=*/ 1);
   Method* method = vf->method();
-  std::cout << "EnsureJitCompiled()"
-            << ": method=" << method->external_name()
-            << ", bci=" << vf->bci()
-            << std::endl;
+  if (PrintArtemis) {
+    tty->print_cr(">>"
+                  "EnsureJitCompiled()"
+                  ": method=\"%s\""
+                  ", bci=%d"
+                  ", osr=true"
+                  "<<",
+                  method->external_name(),
+                  vf->bci());
+  }
   // Bug(congli): Not every bytecode index can OSR compile a method.
   // The following makes an assertion in ciTypeFlow::block_at() fail
   // where requires ciblk->start() == osr_bci. So seems only bci of
@@ -149,11 +185,24 @@ AX_END
 
 AX_ENTRY(jboolean, AX_EnsureDeoptimized(JNIEnv* env, jclass artemis))
   javaVFrame* vf = get_javaVframe_at(thread, /*depth=*/ 1);
-  Method* method = vf->method();
-  std::cout << "EnsureDeoptimized()"
-            << ": method=" << method->external_name()
-            << std::endl;
+
+  // No need to deoptimize since we're already interpreted.
+  if (vf->is_interpreted_frame()) {
+    return false;
+  }
+
+  if (PrintArtemis) {
+    Method* method = vf->method();
+    tty->print_cr(">>"
+                  "EnsureDeoptimized()"
+                  ": method=\"%s\""
+                  ", osr=true"
+                  "<<",
+                  method->external_name());
+  }
+
   Deoptimization::deoptimize_frame(thread, vf->frame_pointer()->id());
+
   return true;
 AX_END
 
