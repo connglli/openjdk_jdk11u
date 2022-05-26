@@ -64,7 +64,7 @@ jmethodID reflected_method_to_jmethod_id(JavaThread* thread,
   return env->FromReflectedMethod(method);
 }
 
-bool is_method_compiled(JavaThread* thread, jmethodID jmid) {
+bool is_method_compiled(JavaThread* thread, jmethodID jmid, bool is_osr = false) {
   // The following is coped from whitebox.cpp
   MutexLockerEx mu(Compile_lock);
   methodHandle mh(thread, Method::checked_resolve_jmethod_id(jmid));
@@ -78,8 +78,8 @@ bool is_method_compiled(JavaThread* thread, jmethodID jmid) {
   CompiledMethod *code = mh->lookup_osr_nmethod_for(InvocationEntryBci,
                                                     CompLevel_none,
                                                     /*match_level=*/ false);
-  // No OSR nmethod, just find an non-OSR method
-  if (code == NULL) {
+  // Not an OSR nmethod, find a non-OSR nmethod
+  if (!is_osr && code == NULL) {
     code = mh->code();
   }
   return code != NULL &&
@@ -165,6 +165,16 @@ AX_END
 AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env, jclass artemis))
   javaVFrame* vf = get_javaVframe_at(thread, /*depth=*/ 1);
   Method* method = vf->method();
+  // Already in compiler, don't compile
+  // TODO(congli): Currently we don't care about whether the method is
+  // marked to be deoptimized in future. May consider supporting this.
+  if (vf->is_compiled_frame()) {
+    return true;
+  }
+  // Already OSR compiled, no need any OSR compilation
+  if (is_method_compiled(thread, method->jmethod_id(), /*is_osr=*/ true)) {
+    return true;
+  }
   if (PrintArtemis) {
     tty->print_cr(">>"
                   "EnsureJitCompiled()"
@@ -175,10 +185,19 @@ AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env, jclass artemis))
                   method->external_name(),
                   vf->bci());
   }
-  // Bug(congli): Not every bytecode index can OSR compile a method.
+  // BUG(congli): Not every bytecode index can OSR compile a method.
   // The following makes an assertion in ciTypeFlow::block_at() fail
   // where requires ciblk->start() == osr_bci. So seems only bci of
-  // block start can be used in here.
+  // block start can be used in here. If the Java caller ensures this
+  // function (Artemis.ensureJitCompiled()) is always called at the
+  // beginning of a block. This the compilation works, but the OSR
+  // (i.e., stack migration) is not yet done. So is still interpreting.
+  // In HotSpot like x86,
+  // - For Template Interpreter, the backedge counter is updated and
+  //   OSR is to be executed in the TemplateTable::branch() method,
+  //   i.e., templateTable_x86.cpp:branch()
+  // - For Cpp Interpreter, this happens inside the bytecode interp.,
+  //   i.e., bytecodeInterpreter.cpp:DO_BACKEDGE_CHECKS()
   return WhiteBox::compile_method(method, CompLevel_full_optimization,
                                   vf->bci(), thread);
 AX_END
