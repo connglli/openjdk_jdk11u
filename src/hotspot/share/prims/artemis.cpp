@@ -19,7 +19,7 @@
 #define AX_ENTRY WB_ENTRY
 #define AX_END WB_END
 
-javaVFrame* get_javaVframe_at(JavaThread* thread, int depth,
+javaVFrame* get_javaVFrame_at(JavaThread* thread, int depth,
                               bool must_exist = true) {
   if (!thread->has_last_Java_frame()) {
     return NULL;
@@ -53,14 +53,14 @@ bool is_being_managed_on_stack(JavaThread* thread, Method* goal) {
 }
 
 bool is_being_interpreted_at(JavaThread* thread, int depth) {
-  javaVFrame* vf = get_javaVframe_at(thread, depth);
+  javaVFrame* vf = get_javaVFrame_at(thread, depth);
   return vf->is_interpreted_frame();
 }
 
 jmethodID reflected_method_to_jmethod_id(JavaThread* thread,
                                          JNIEnv* env,
                                          jobject method) {
-  assert(method != NULL, "method should not be null");
+  assert(method != NULL, "Method should not be null");
   ThreadToNativeFromVM ttn(thread);
   return env->FromReflectedMethod(method);
 }
@@ -99,7 +99,7 @@ bool Artemis::_used = false;
 AX_ENTRY(jboolean, AX_IsBeingInterpreted(JNIEnv* env, jclass artemis))
   int depth = 1;
   if (PrintArtemis) {
-    Method* method = get_javaVframe_at(thread, depth)->method();
+    Method* method = get_javaVFrame_at(thread, depth)->method();
     tty->print_cr(">>"
                   "IsBeingInterpreted()"
                   ": method=\"%s\""
@@ -135,7 +135,7 @@ AX_ENTRY(jboolean, AX_IsJitCompiled(JNIEnv* env,
   // TODO(congli): Support other CompLevels like C2.
   assert(compLevel == CompLevel_simple,
          "Only support C1 with SIMPLE level by far");
-  Method* method = get_javaVframe_at(thread, /*depth=*/ caller)->method();
+  Method* method = get_javaVFrame_at(thread, /*depth=*/ caller)->method();
   if (PrintArtemis) {
     tty->print_cr(">>"
                   "IsJitCompiled()"
@@ -190,7 +190,7 @@ AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env,
   assert(compLevel == CompLevel_simple,
          "Only support C1 with SIMPLE level by far");
 
-  javaVFrame* vf = get_javaVframe_at(thread, /*depth=*/ caller);
+  javaVFrame* vf = get_javaVFrame_at(thread, /*depth=*/ caller);
 
   // Already in compiler, don't compile
   // TODO(congli): Currently we don't care about whether the method is
@@ -235,12 +235,14 @@ AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env,
 AX_END
 
 AX_ENTRY(jboolean, AX_EnsureDeoptimized(JNIEnv* env, jclass artemis))
-  javaVFrame* vf = get_javaVframe_at(thread, /*depth=*/ 1);
+  javaVFrame* vf = get_javaVFrame_at(thread, /*depth=*/ 1);
 
   // No need to deoptimize since we're already interpreted.
   if (vf->is_interpreted_frame()) {
     return true;
   }
+  assert(vf->is_compiled_frame(),
+         "Non-interpreted javaVFrame should be a compiledVFrame");
 
   Method* method = vf->method();
 
@@ -253,12 +255,9 @@ AX_ENTRY(jboolean, AX_EnsureDeoptimized(JNIEnv* env, jclass artemis))
                   method->external_name());
   }
 
-  // TODO(congli): Only deoptimize current frame using Deoptimization::deoptimize_frame()
-  // and then mark the method to be invalid like mark CodeCache?
-
-  // Deoptimize the method instead of the sole frame such that all
-  // following invocations go into the interpreter. Currently, we
-  // deoptimize all nmethods activations (our caller and us) on the stack.
+  // Deoptimize the method instead of the sole frame such that all following
+  // invocations go into the interpreter. This often additionally invalidates
+  // our caller's frame especially when we are recursive function calls.
   int result = 0;
 
   {
