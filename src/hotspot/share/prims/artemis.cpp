@@ -65,7 +65,10 @@ jmethodID reflected_method_to_jmethod_id(JavaThread* thread,
   return env->FromReflectedMethod(method);
 }
 
-bool is_method_compiled(JavaThread* thread, jmethodID jmid, int compLevel, bool is_osr = false) {
+bool is_method_compiled(JavaThread* thread,
+                        jmethodID jmid,
+                        int compLevel,
+                        bool is_osr = false) {
   // The following is coped from whitebox.cpp
   MutexLockerEx mu(Compile_lock);
   methodHandle mh(thread, Method::checked_resolve_jmethod_id(jmid));
@@ -111,7 +114,8 @@ AX_ENTRY(jboolean, AX_IsMethodJitCompiled(JNIEnv* env,
                                           jobject rmethod,
                                           jint compLevel))
   // TODO(congli): Support other CompLevels like C2.
-  assert(compLevel == CompLevel_simple, "Only support C1 with SIMPLE level by far");
+  assert(compLevel == CompLevel_simple,
+         "Only support C1 with SIMPLE level by far");
   jmethodID jmid = reflected_method_to_jmethod_id(thread, env, rmethod);
   if (PrintArtemis) {
     Method* method = Method::checked_resolve_jmethod_id(jmid);
@@ -124,9 +128,13 @@ AX_ENTRY(jboolean, AX_IsMethodJitCompiled(JNIEnv* env,
   return is_method_compiled(thread, jmid, compLevel);
 AX_END
 
-AX_ENTRY(jboolean, AX_IsJitCompiled(JNIEnv* env, jclass artemis, jint caller, jint compLevel))
+AX_ENTRY(jboolean, AX_IsJitCompiled(JNIEnv* env,
+                                    jclass artemis,
+                                    jint caller,
+                                    jint compLevel))
   // TODO(congli): Support other CompLevels like C2.
-  assert(compLevel == CompLevel_simple, "Only support C1 with SIMPLE level by far");
+  assert(compLevel == CompLevel_simple,
+         "Only support C1 with SIMPLE level by far");
   Method* method = get_javaVframe_at(thread, /*depth=*/ caller)->method();
   if (PrintArtemis) {
     tty->print_cr(">>"
@@ -143,7 +151,8 @@ AX_ENTRY(jboolean, AX_EnsureMethodJitCompiled(JNIEnv* env,
                                               jobject rmethod,
                                               jint compLevel))
   // TODO(congli): Support other CompLevels like C2.
-  assert(compLevel == CompLevel_simple, "Only support C1 with SIMPLE level by far");
+  assert(compLevel == CompLevel_simple,
+         "Only support C1 with SIMPLE level by far");
 
   jmethodID jmid = reflected_method_to_jmethod_id(thread, env, rmethod);
 
@@ -173,9 +182,13 @@ AX_ENTRY(jboolean, AX_EnsureMethodJitCompiled(JNIEnv* env,
                                   InvocationEntryBci, thread);
 AX_END
 
-AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env, jclass artemis, jint caller, jint compLevel))
+AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env,
+                                        jclass artemis,
+                                        jint caller,
+                                        jint compLevel))
   // TODO(congli): Support other CompLevels like C2.
-  assert(compLevel == CompLevel_simple, "Only support C1 with SIMPLE level by far");
+  assert(compLevel == CompLevel_simple,
+         "Only support C1 with SIMPLE level by far");
 
   javaVFrame* vf = get_javaVframe_at(thread, /*depth=*/ caller);
 
@@ -189,7 +202,8 @@ AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env, jclass artemis, jint caller
   Method* method = vf->method();
 
   // Already OSR compiled, no need any OSR compilation
-  if (is_method_compiled(thread, method->jmethod_id(), compLevel, /*is_osr=*/ true)) {
+  if (is_method_compiled(thread, method->jmethod_id(),
+                         compLevel, /*is_osr=*/ true)) {
     return true;
   }
 
@@ -239,20 +253,31 @@ AX_ENTRY(jboolean, AX_EnsureDeoptimized(JNIEnv* env, jclass artemis))
                   method->external_name());
   }
 
-  // Deoptimize the method instead of the sole frame such that
-  // all following invocations go into the interpreter.
+  // TODO(congli): Only deoptimize current frame using Deoptimization::deoptimize_frame()
+  // and then mark the method to be invalid like mark CodeCache?
+
+  // Deoptimize the method instead of the sole frame such that all
+  // following invocations go into the interpreter. Currently, we
+  // deoptimize all nmethods activations (our caller and us) on the stack.
   int result = 0;
 
   {
     MutexLockerEx mu(Compile_lock);
     methodHandle mh(thread, method);
-    if (mh->lookup_osr_nmethod_for(InvocationEntryBci, CompLevel_none, /*match_level=*/ false)) {
+
+    // Invalidate all OSR nmethods
+    if (mh->lookup_osr_nmethod_for(InvocationEntryBci,
+                                   CompLevel_none, /*match_level=*/ false)) {
       result += mh->mark_osr_nmethods();
-    } else if (mh->code() != NULL) {
+    }
+    // Invalidate all non-OSR nmethods
+    if (mh->code() != NULL) {
       mh->code()->mark_for_deoptimization();
       result += 1;
     }
+    // Invalidate CodeCache
     result += CodeCache::mark_for_deoptimization(mh());
+
     if (result > 0) {
       VM_Deoptimize op;
       VMThread::execute(&op);
