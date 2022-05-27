@@ -65,7 +65,7 @@ jmethodID reflected_method_to_jmethod_id(JavaThread* thread,
   return env->FromReflectedMethod(method);
 }
 
-bool is_method_compiled(JavaThread* thread, jmethodID jmid, bool is_osr = false) {
+bool is_method_compiled(JavaThread* thread, jmethodID jmid, int compLevel, bool is_osr = false) {
   // The following is coped from whitebox.cpp
   MutexLockerEx mu(Compile_lock);
   methodHandle mh(thread, Method::checked_resolve_jmethod_id(jmid));
@@ -85,7 +85,8 @@ bool is_method_compiled(JavaThread* thread, jmethodID jmid, bool is_osr = false)
   }
   return code != NULL &&
          code->is_alive() &&
-         !code->is_marked_for_deoptimization();
+         !code->is_marked_for_deoptimization() &&
+         code->comp_level() == compLevel;
 }
 
 // Native Artemis fields/methods //////////////////////////////////////////////
@@ -107,7 +108,10 @@ AX_END
 
 AX_ENTRY(jboolean, AX_IsMethodJitCompiled(JNIEnv* env,
                                           jclass artemis,
-                                          jobject rmethod))
+                                          jobject rmethod,
+                                          jint compLevel))
+  // TODO(congli): Support other CompLevels like C2.
+  assert(compLevel == CompLevel_simple, "Only support C1 with SIMPLE level by far");
   jmethodID jmid = reflected_method_to_jmethod_id(thread, env, rmethod);
   if (PrintArtemis) {
     Method* method = Method::checked_resolve_jmethod_id(jmid);
@@ -117,11 +121,13 @@ AX_ENTRY(jboolean, AX_IsMethodJitCompiled(JNIEnv* env,
                   "<<",
                   method->external_name());
   }
-  return is_method_compiled(thread, jmid);
+  return is_method_compiled(thread, jmid, compLevel);
 AX_END
 
-AX_ENTRY(jboolean, AX_IsJitCompiled(JNIEnv* env, jclass artemis))
-  Method* method = get_javaVframe_at(thread, /*depth=*/ 1)->method();
+AX_ENTRY(jboolean, AX_IsJitCompiled(JNIEnv* env, jclass artemis, jint caller, jint compLevel))
+  // TODO(congli): Support other CompLevels like C2.
+  assert(compLevel == CompLevel_simple, "Only support C1 with SIMPLE level by far");
+  Method* method = get_javaVframe_at(thread, /*depth=*/ caller)->method();
   if (PrintArtemis) {
     tty->print_cr(">>"
                   "IsJitCompiled()"
@@ -129,17 +135,21 @@ AX_ENTRY(jboolean, AX_IsJitCompiled(JNIEnv* env, jclass artemis))
                   "<<",
                   method->external_name());
   }
-  return is_method_compiled(thread, method->jmethod_id());
+  return is_method_compiled(thread, method->jmethod_id(), compLevel);
 AX_END
 
 AX_ENTRY(jboolean, AX_EnsureMethodJitCompiled(JNIEnv* env,
                                               jclass artemis,
-                                              jobject rmethod))
+                                              jobject rmethod,
+                                              jint compLevel))
+  // TODO(congli): Support other CompLevels like C2.
+  assert(compLevel == CompLevel_simple, "Only support C1 with SIMPLE level by far");
+
   jmethodID jmid = reflected_method_to_jmethod_id(thread, env, rmethod);
 
   // No need to compile the method
-  if (is_method_compiled(thread, jmid)) {
-    return false;
+  if (is_method_compiled(thread, jmid, compLevel)) {
+    return true;
   }
 
   Method* method = Method::checked_resolve_jmethod_id(jmid);
@@ -159,23 +169,30 @@ AX_ENTRY(jboolean, AX_EnsureMethodJitCompiled(JNIEnv* env,
                   method->external_name());
   }
 
-  return WhiteBox::compile_method(method, CompLevel_full_optimization,
+  return WhiteBox::compile_method(method, compLevel,
                                   InvocationEntryBci, thread);
 AX_END
 
-AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env, jclass artemis))
-  javaVFrame* vf = get_javaVframe_at(thread, /*depth=*/ 1);
-  Method* method = vf->method();
+AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env, jclass artemis, jint caller, jint compLevel))
+  // TODO(congli): Support other CompLevels like C2.
+  assert(compLevel == CompLevel_simple, "Only support C1 with SIMPLE level by far");
+
+  javaVFrame* vf = get_javaVframe_at(thread, /*depth=*/ caller);
+
   // Already in compiler, don't compile
   // TODO(congli): Currently we don't care about whether the method is
   // marked to be deoptimized in future. May consider supporting this.
   if (vf->is_compiled_frame()) {
     return true;
   }
+
+  Method* method = vf->method();
+
   // Already OSR compiled, no need any OSR compilation
-  if (is_method_compiled(thread, method->jmethod_id(), /*is_osr=*/ true)) {
+  if (is_method_compiled(thread, method->jmethod_id(), compLevel, /*is_osr=*/ true)) {
     return true;
   }
+
   if (PrintArtemis) {
     tty->print_cr(">>"
                   "EnsureJitCompiled()"
@@ -186,6 +203,7 @@ AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env, jclass artemis))
                   method->external_name(),
                   vf->bci());
   }
+
   // BUG(congli): Not every bytecode index can OSR compile a method.
   // The following makes an assertion in ciTypeFlow::block_at() fail
   // where requires ciblk->start() == osr_bci. So seems only bci of
@@ -199,8 +217,7 @@ AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env, jclass artemis))
   //   i.e., templateTable_x86.cpp:branch()
   // - For Cpp Interpreter, this happens inside the bytecode interp.,
   //   i.e., bytecodeInterpreter.cpp:DO_BACKEDGE_CHECKS()
-  return WhiteBox::compile_method(method, CompLevel_full_optimization,
-                                  vf->bci(), thread);
+  return WhiteBox::compile_method(method, compLevel, vf->bci(), thread);
 AX_END
 
 AX_ENTRY(jboolean, AX_EnsureDeoptimized(JNIEnv* env, jclass artemis))
@@ -208,7 +225,7 @@ AX_ENTRY(jboolean, AX_EnsureDeoptimized(JNIEnv* env, jclass artemis))
 
   // No need to deoptimize since we're already interpreted.
   if (vf->is_interpreted_frame()) {
-    return false;
+    return true;
   }
 
   Method* method = vf->method();
@@ -250,10 +267,10 @@ AX_END
 #define CC (char*)
 static JNINativeMethod methods[] = {
   {CC"isBeingInterpreted", CC"()Z", (void*)&AX_IsBeingInterpreted},
-  {CC"isJitCompiled", CC"()Z", (void*)&AX_IsJitCompiled},
-  {CC"isMethodJitCompiled", CC"(Ljava/lang/reflect/Method;)Z", (void*)&AX_IsMethodJitCompiled},
-  {CC"ensureJitCompiled", CC"()Z", (void*)&AX_EnsureJitCompiled},
-  {CC"ensureMethodJitCompiled", CC"(Ljava/lang/reflect/Method;)Z", (void*)&AX_EnsureMethodJitCompiled},
+  {CC"isJitCompiled0", CC"(II)Z", (void*)&AX_IsJitCompiled},
+  {CC"isMethodJitCompiled0", CC"(Ljava/lang/reflect/Method;I)Z", (void*)&AX_IsMethodJitCompiled},
+  {CC"ensureJitCompiled0", CC"(II)Z", (void*)&AX_EnsureJitCompiled},
+  {CC"ensureMethodJitCompiled0", CC"(Ljava/lang/reflect/Method;I)Z", (void*)&AX_EnsureMethodJitCompiled},
   {CC"ensureDeoptimized", CC"()Z", (void*)&AX_EnsureDeoptimized}
 };
 #undef CC
