@@ -1,3 +1,4 @@
+#include "code/codeCache.hpp"
 #include "prims/artemis.hpp"
 #include "prims/whitebox.hpp"
 #include "prims/whitebox.inline.hpp"
@@ -210,8 +211,9 @@ AX_ENTRY(jboolean, AX_EnsureDeoptimized(JNIEnv* env, jclass artemis))
     return false;
   }
 
+  Method* method = vf->method();
+
   if (PrintArtemis) {
-    Method* method = vf->method();
     tty->print_cr(">>"
                   "EnsureDeoptimized()"
                   ": method=\"%s\""
@@ -220,9 +222,27 @@ AX_ENTRY(jboolean, AX_EnsureDeoptimized(JNIEnv* env, jclass artemis))
                   method->external_name());
   }
 
-  Deoptimization::deoptimize_frame(thread, vf->frame_pointer()->id());
+  // Deoptimize the method instead of the sole frame such that
+  // all following invocations go into the interpreter.
+  int result = 0;
 
-  return true;
+  {
+    MutexLockerEx mu(Compile_lock);
+    methodHandle mh(thread, method);
+    if (mh->lookup_osr_nmethod_for(InvocationEntryBci, CompLevel_none, /*match_level=*/ false)) {
+      result += mh->mark_osr_nmethods();
+    } else if (mh->code() != NULL) {
+      mh->code()->mark_for_deoptimization();
+      result += 1;
+    }
+    result += CodeCache::mark_for_deoptimization(mh());
+    if (result > 0) {
+      VM_Deoptimize op;
+      VMThread::execute(&op);
+    }
+  }
+
+  return result > 0;
 AX_END
 
 // Register native methods to the Java-level Artemis class ////////////////////
