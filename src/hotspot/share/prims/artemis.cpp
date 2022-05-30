@@ -19,6 +19,9 @@
 #define AX_ENTRY WB_ENTRY
 #define AX_END WB_END
 
+// Get the javaVFrame on thread's stack at depth.
+// Attention: ALWAYS put a ResourceMark before invoking this method
+// because we're allocating javaVFrame which spills out of the method.
 javaVFrame* get_javaVFrame_at(JavaThread* thread, int depth,
                               bool must_exist = true) {
   if (!thread->has_last_Java_frame()) {
@@ -37,10 +40,12 @@ javaVFrame* get_javaVFrame_at(JavaThread* thread, int depth,
   return cur_vf;
 }
 
+// Check if the method "goal" is being manged on thread's stack.
 bool is_being_managed_on_stack(JavaThread* thread, Method* goal) {
   if (!thread->has_last_Java_frame()) {
     return NULL;
   }
+  ResourceMark rm(thread);
   RegisterMap reg_map(thread);
   javaVFrame* cur_vf = thread->last_java_vframe(&reg_map);
   while (cur_vf != NULL) {
@@ -52,7 +57,9 @@ bool is_being_managed_on_stack(JavaThread* thread, Method* goal) {
   return false;
 }
 
+// Check if the frame at depth of thread's stack is being interpreted.
 bool is_being_interpreted_at(JavaThread* thread, int depth) {
+  ResourceMark rm(thread);
   javaVFrame* vf = get_javaVFrame_at(thread, depth);
   return vf->is_interpreted_frame();
 }
@@ -65,6 +72,7 @@ jmethodID reflected_method_to_jmethod_id(JavaThread* thread,
   return env->FromReflectedMethod(method);
 }
 
+// Check if method with jmid is (OSR) compiled or not.
 bool is_method_compiled(JavaThread* thread,
                         jmethodID jmid,
                         int compLevel,
@@ -99,6 +107,7 @@ bool Artemis::_used = false;
 AX_ENTRY(jboolean, AX_IsBeingInterpreted(JNIEnv* env, jclass artemis))
   int depth = 1;
   if (PrintArtemis) {
+    ResourceMark rm(thread);
     Method* method = get_javaVFrame_at(thread, depth)->method();
     tty->print_cr(">>"
                   "IsBeingInterpreted()"
@@ -135,6 +144,7 @@ AX_ENTRY(jboolean, AX_IsJitCompiled(JNIEnv* env,
   // TODO(congli): Support other CompLevels like C2.
   assert(compLevel == CompLevel_simple,
          "Only support C1 with SIMPLE level by far");
+  ResourceMark rm(thread);
   Method* method = get_javaVFrame_at(thread, /*depth=*/ caller)->method();
   if (PrintArtemis) {
     tty->print_cr(">>"
@@ -190,6 +200,7 @@ AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env,
   assert(compLevel == CompLevel_simple,
          "Only support C1 with SIMPLE level by far");
 
+  ResourceMark rm(thread);
   javaVFrame* vf = get_javaVFrame_at(thread, /*depth=*/ caller);
 
   // Already in compiler, don't compile
@@ -235,6 +246,7 @@ AX_ENTRY(jboolean, AX_EnsureJitCompiled(JNIEnv* env,
 AX_END
 
 AX_ENTRY(jboolean, AX_EnsureDeoptimized(JNIEnv* env, jclass artemis))
+  ResourceMark rm(thread);
   javaVFrame* vf = get_javaVFrame_at(thread, /*depth=*/ 1);
 
   // No need to deoptimize since we're already interpreted.
