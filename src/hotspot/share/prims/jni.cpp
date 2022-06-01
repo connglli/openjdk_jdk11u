@@ -90,6 +90,7 @@
 #include "utilities/histogram.hpp"
 #include "utilities/internalVMTests.hpp"
 #include "utilities/macros.hpp"
+#include "utilities/ostream.hpp"
 #include "utilities/vmError.hpp"
 #if INCLUDE_JVMCI
 #include "jvmci/jvmciCompiler.hpp"
@@ -3520,6 +3521,47 @@ JNI_ENTRY(jobject, jni_GetModule(JNIEnv* env, jclass clazz))
   return Modules::get_module(clazz, THREAD);
 JNI_END
 
+JNI_ENTRY(void, jni_ArteimsPrintMethodCounters(JNIEnv* env, jclass clazz))
+  JNIWrapper("ArteimsPrintMethodCounters");
+  if (ArtemisMethodCountersFile != NULL) {
+    ResourceMark rm(THREAD);
+
+    oop mirror = JNIHandles::resolve_non_null(clazz);
+    if (java_lang_Class::is_primitive(mirror)) {
+      return;
+    }
+
+    InstanceKlass* klass = InstanceKlass::cast(java_lang_Class::as_Klass(mirror));
+    assert(klass->is_initialized(), "InstanceKlass is not yet initialized");
+
+    fileStream fout(ArtemisMethodCountersFile);
+    fout.set_need_close(/*b=*/ true);
+
+    // HotSpot VM options
+    fout.print_cr("CompileThreshold: value=%ld", CompileThreshold);
+    fout.print_cr("ProfileInterpreter: value=%s", ProfileInterpreter ? "true" : "false");
+    fout.print_cr("InterpreterProfilePercentage: value=%ld%%", InterpreterProfilePercentage);
+    fout.print_cr("OnStackReplacePercentage: value=%ld%%", OnStackReplacePercentage);
+
+    // Thresholds (see invocationCounter.{h,c}pp)
+    fout.print_cr("InterpreterProfileLimit: value=%d",             // Profile threshold
+      InvocationCounter::InterpreterProfileLimit >> InvocationCounter::count_shift);
+    fout.print_cr("InterpreterInvocationLimit: value=%d",          // JIT threshold
+      InvocationCounter::InterpreterInvocationLimit >> InvocationCounter::count_shift);
+    fout.print_cr("InterpreterBackwardBranchLimit: value=%d",      // OSR threshold
+      ProfileInterpreter ? InvocationCounter::InterpreterBackwardBranchLimit
+                         : InvocationCounter::InterpreterBackwardBranchLimit >> InvocationCounter::count_shift);
+
+    // Method counters
+    Array<Method*>* methods = klass->methods();
+    for (int i = 0; i < methods->length(); i ++) {
+      Method* method = methods->at(i);
+      fout.print_cr("MethodCounter: method=\"%s\", invocation=%d, backedge=%d, interpreted=%d, compiled=%ld",
+                    method->external_name(), method->invocation_count(), method->backedge_count(),
+                    method->interpreter_invocation_count(), method->compiled_invocation_count());
+    }
+  }
+JNI_END
 
 // Structure containing all jni functions
 struct JNINativeInterface_ jni_NativeInterface = {
@@ -3804,7 +3846,11 @@ struct JNINativeInterface_ jni_NativeInterface = {
 
     // Module features
 
-    jni_GetModule
+    jni_GetModule,
+
+    // Artemis features
+
+    jni_ArteimsPrintMethodCounters
 };
 
 

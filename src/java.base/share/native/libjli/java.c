@@ -554,6 +554,16 @@ JavaMain(void* _args)
      */
     ret = (*env)->ExceptionOccurred(env) == NULL ? 0 : 1;
 
+    /*
+     * Log method counters to the given file.
+     * TODO(congli): instead of print the method counters of the
+     * main class, it's better to print method counters of user-
+     * specified classes (like from an input file)
+     */
+    if (ret == 0) {
+        (*env)->ArteimsPrintMethodCounters(env, mainClass);
+    }
+
     LEAVE();
 }
 

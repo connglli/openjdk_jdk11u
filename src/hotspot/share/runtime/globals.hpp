@@ -1096,6 +1096,9 @@ define_pd_global(uint64_t,MaxRAM,                    1ULL*G);
   develop(bool, PrintArtemis, false,                                        \
           "Print artemis' compilation/deoptimization log")                  \
                                                                             \
+  develop(ccstr, ArtemisMethodCountersFile, NULL,                           \
+          "Print method counter statistics to this file")                   \
+                                                                            \
   /* JVMTI heap profiling */                                                \
                                                                             \
   diagnostic(bool, TraceJVMTIObjectTagging, false,                          \

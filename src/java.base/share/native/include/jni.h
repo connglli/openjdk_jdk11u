@@ -770,6 +770,10 @@ struct JNINativeInterface_ {
 
     jobject (JNICALL *GetModule)
        (JNIEnv* env, jclass clazz);
+
+    /* Artemis Features */
+    void (JNICALL *ArteimsPrintMethodCounters)
+       (JNIEnv* env, jclass clazz);
 };
 
 /*
@@ -1866,6 +1870,12 @@ struct JNIEnv_ {
 
     jobject GetModule(jclass clazz) {
         return functions->GetModule(this, clazz);
+    }
+
+    /* Artemis Features */
+
+    void ArteimsPrintMethodCounters(jclass clazz) {
+        functions->ArteimsPrintMethodCounters(this, clazz);
     }
 
 #endif /* __cplusplus */
