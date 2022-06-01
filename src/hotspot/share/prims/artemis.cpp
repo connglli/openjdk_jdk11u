@@ -43,7 +43,7 @@ javaVFrame* get_javaVFrame_at(JavaThread* thread, int depth,
 // Check if the method "goal" is being manged on thread's stack.
 bool is_being_managed_on_stack(JavaThread* thread, Method* goal) {
   if (!thread->has_last_Java_frame()) {
-    return NULL;
+    return false;
   }
   ResourceMark rm(thread);
   RegisterMap reg_map(thread);
